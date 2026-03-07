@@ -1,0 +1,27 @@
+{
+    "manifest_version": 3,
+    "name": "YouTube Playlist Analyzer",
+    "version": "1.0",
+    "description": "Analyze YouTube playlists: count, duration, sort, and range selection.",
+    "permissions": [],
+    "host_permissions": [
+        "*://*.youtube.com/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.youtube.com/playlist*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "css": [],
+            "run_at": "document_idle"
+        }
+    ],
+    "icons": {
+        "16": "icon16.png",
+        "48": "icon48.png",
+        "128": "icon128.png"
+    }
+}
