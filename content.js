@@ -3,25 +3,23 @@
 
     // Configuration
     const PANEL_ID = "yt-playlist-analyzer-panel";
-    const TARGET_SELECTOR = "ytd-playlist-header-renderer .play-menu"; // More generic to catch all screen sizes
+    const TARGET_SELECTOR = "ytd-playlist-header-renderer .play-menu";
     const VIDEO_LIST_SELECTOR = "ytd-playlist-video-list-renderer #contents";
     const VIDEO_ITEM_SELECTOR = "ytd-playlist-video-renderer";
     const TITLE_SELECTOR = "#video-title";
-    const DURATION_SELECTOR =
-        "ytd-thumbnail-overlay-time-status-renderer span, #text.ytd-thumbnail-overlay-time-status-renderer";
+    const DURATION_SELECTOR = "ytd-thumbnail-overlay-time-status-renderer span, #text.ytd-thumbnail-overlay-time-status-renderer";
 
     // State
-    let videoData = [];
-    let sortOption = "default";
+    let videoData = []; 
+    let sortOption = "default"; 
     let startIndex = 1;
-    let endIndex = null;
+    let endIndex = null; 
     let isFocusMode = false;
     let panel = null;
     let observer = null;
-    let lastSortOption = null;
     let lastVideoCount = 0;
 
-    // Inject styles immediately
+    // Inject styles
     (function injectStyles() {
         if (document.getElementById(`${PANEL_ID}-style`)) return;
         const style = document.createElement("style");
@@ -44,17 +42,8 @@
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
                 padding: 12px 0;
             }
-            #${PANEL_ID} .stat-count {
-                font-size: 20px;
-                font-weight: 700;
-                color: #fff;
-                margin-bottom: 4px;
-            }
-            #${PANEL_ID} .stat-duration {
-                font-size: 16px;
-                font-weight: 500;
-                color: #aaa;
-            }
+            #${PANEL_ID} .stat-count { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+            #${PANEL_ID} .stat-duration { font-size: 16px; font-weight: 500; color: #aaa; }
             #${PANEL_ID} .controls { display: flex; flex-direction: column; gap: 12px; }
             #${PANEL_ID} .control-group { display: flex; flex-direction: column; gap: 6px; }
             #${PANEL_ID} label { font-size: 13px; font-weight: 500; color: #ccc; }
@@ -101,9 +90,7 @@
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
-        if (hours > 0) {
-            return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-        }
+        if (hours > 0) return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
         return `${minutes}:${seconds.toString().padStart(2, "0")}`;
     }
 
@@ -112,17 +99,16 @@
         if (!container) return [];
         const items = container.querySelectorAll(VIDEO_ITEM_SELECTOR);
         const data = [];
-        items.forEach((item) => {
+        items.forEach((item, index) => {
             const titleEl = item.querySelector(TITLE_SELECTOR);
             const title = titleEl ? titleEl.textContent.trim() : "Untitled";
             const durationElement = item.querySelector(DURATION_SELECTOR);
-            const durationText = durationElement
-                ? durationElement.textContent.trim()
-                : "0:00";
-            data.push({
-                title,
+            const durationText = durationElement ? durationElement.textContent.trim() : "0:00";
+            data.push({ 
+                title, 
                 durationSeconds: parseDuration(durationText),
                 element: item,
+                originalIndex: index + 1
             });
         });
         return data;
@@ -131,7 +117,7 @@
     function sortData(data) {
         const sorted = [...data];
         if (sortOption === "default") return sorted;
-
+        
         switch (sortOption) {
             case "index-desc":
                 sorted.reverse();
@@ -153,10 +139,8 @@
     }
 
     function updateDropdowns(startSelect, endSelect, data) {
-        if (lastVideoCount === data.length && lastSortOption === sortOption) return;
-
+        if (lastVideoCount === data.length) return;
         lastVideoCount = data.length;
-        lastSortOption = sortOption;
 
         const prevStart = startIndex;
         const prevEnd = endIndex || data.length;
@@ -173,12 +157,12 @@
 
         startSelect.value = prevStart <= data.length ? prevStart : 1;
         endSelect.value = prevEnd <= data.length ? prevEnd : data.length;
-
+        
         startIndex = parseInt(startSelect.value) || 1;
         endIndex = parseInt(endSelect.value) || data.length;
     }
 
-    function applyUIVisibility(allData, sortedData, filteredData) {
+    function applyUIVisibility(allData, filteredSortedData) {
         const container = document.querySelector(VIDEO_LIST_SELECTOR);
         if (container) {
             container.style.display = "flex";
@@ -186,14 +170,18 @@
         }
 
         allData.forEach((v) => {
-            const sortIdx = sortedData.findIndex((s) => s.element === v.element);
-            v.element.style.order = sortIdx;
-
-            if (isFocusMode) {
-                const isSelected = filteredData.some((f) => f.element === v.element);
-                v.element.style.display = isSelected ? "" : "none";
-            } else {
+            const sortIdx = filteredSortedData.findIndex((s) => s.element === v.element);
+            
+            if (sortIdx !== -1) {
+                v.element.style.order = sortIdx;
                 v.element.style.display = "";
+            } else {
+                if (isFocusMode) {
+                    v.element.style.display = "none";
+                } else {
+                    v.element.style.order = 9999; // Move non-selected to bottom
+                    v.element.style.display = "";
+                }
             }
         });
     }
@@ -202,32 +190,30 @@
         if (!panel) return;
 
         const rawData = extractVideoData();
-        const sortedData = sortData(rawData);
-        videoData = sortedData;
-
+        
+        // Always populate dropdowns with original order
         const startSelect = panel.querySelector("#range-start");
         const endSelect = panel.querySelector("#range-end");
-
-        if (videoData.length > 0) {
-            updateDropdowns(startSelect, endSelect, videoData);
+        if (rawData.length > 0) {
+            updateDropdowns(startSelect, endSelect, rawData);
         }
 
+        // Filter based on original indices
         const startIdx = Math.max(0, startIndex - 1);
-        const endIdx = Math.min(videoData.length, endIndex || videoData.length);
-        const filtered = videoData.slice(startIdx, endIdx);
+        const endIdx = Math.min(rawData.length, endIndex || rawData.length);
+        const rangeData = rawData.slice(startIdx, endIdx);
 
-        const totalSeconds = filtered.reduce(
-            (sum, v) => sum + v.durationSeconds,
-            0,
-        );
+        // Sort the filtered result
+        const sortedFiltered = sortData(rangeData);
+
+        const totalSeconds = sortedFiltered.reduce((sum, v) => sum + v.durationSeconds, 0);
 
         const countEl = panel.querySelector(".stat-count");
         const durationEl = panel.querySelector(".stat-duration");
-        if (countEl) countEl.textContent = `Videos Selected: ${filtered.length}`;
-        if (durationEl)
-            durationEl.textContent = `Total Duration: ${formatDuration(totalSeconds)}`;
+        if (countEl) countEl.textContent = `Videos Selected: ${sortedFiltered.length}`;
+        if (durationEl) durationEl.textContent = `Total Duration: ${formatDuration(totalSeconds)}`;
 
-        applyUIVisibility(rawData, sortedData, filtered);
+        applyUIVisibility(rawData, sortedFiltered);
     }
 
     function createPanel(target) {
@@ -272,10 +258,7 @@
         `;
 
         target.after(panel);
-
-        // Reset tracking to force dropdown population
         lastVideoCount = 0;
-        lastSortOption = null;
 
         const sortSelect = panel.querySelector("#sort-select");
         const startSelect = panel.querySelector("#range-start");
@@ -284,13 +267,12 @@
 
         sortSelect.addEventListener("change", (e) => {
             sortOption = e.target.value;
-            lastSortOption = null;
             updatePanel();
         });
 
         const handleChange = () => {
             startIndex = parseInt(startSelect.value) || 1;
-            endIndex = parseInt(endSelect.value) || videoData.length;
+            endIndex = parseInt(endSelect.value) || 0;
             updatePanel();
         };
 
@@ -304,10 +286,8 @@
         updatePanel();
     }
 
-    let initAttempts = 0;
     function init() {
         if (!window.location.pathname.includes("/playlist")) {
-            // Cleanup panel if navigating away
             const existing = document.getElementById(PANEL_ID);
             if (existing) existing.remove();
             panel = null;
@@ -315,10 +295,7 @@
         }
 
         const checkExist = setInterval(() => {
-            initAttempts++;
             const targets = document.querySelectorAll(TARGET_SELECTOR);
-            // YouTube often has multiple .play-menu elements (one for mobile/mini, one for desktop)
-            // We want the one that is actually visible.
             let target = null;
             for (const t of targets) {
                 if (t.offsetParent !== null) {
@@ -326,34 +303,19 @@
                     break;
                 }
             }
-
             const list = document.querySelector(VIDEO_LIST_SELECTOR);
-
             if (target && list) {
                 clearInterval(checkExist);
-                initAttempts = 0;
                 createPanel(target);
-
                 if (observer) observer.disconnect();
                 observer = new MutationObserver(() => updatePanel());
                 observer.observe(list, { childList: true, subtree: true });
             }
-
-            // Stop trying after 10 seconds to save resources
-            if (initAttempts > 20) {
-                clearInterval(checkExist);
-                initAttempts = 0;
-            }
         }, 500);
     }
 
-    // Listen for SPA navigation
     document.addEventListener("yt-navigate-finish", init);
-    // Listen for standard load
-    if (
-        document.readyState === "complete" ||
-        document.readyState === "interactive"
-    ) {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
         init();
     } else {
         window.addEventListener("DOMContentLoaded", init);
