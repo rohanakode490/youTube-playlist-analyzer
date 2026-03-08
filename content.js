@@ -11,7 +11,6 @@
 
     // State
     let videoData = []; 
-    let sortOption = "default"; 
     let startIndex = 1;
     let endIndex = null; 
     let isFocusMode = false;
@@ -37,10 +36,9 @@
                 box-sizing: border-box;
             }
             #${PANEL_ID} .stats-container {
-                margin: 16px 0;
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                margin-bottom: 16px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 12px 0;
+                padding-bottom: 12px;
             }
             #${PANEL_ID} .stat-count { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
             #${PANEL_ID} .stat-duration { font-size: 16px; font-weight: 500; color: #aaa; }
@@ -108,34 +106,10 @@
                 title, 
                 durationSeconds: parseDuration(durationText),
                 element: item,
-                originalIndex: index + 1
+                index: index + 1
             });
         });
         return data;
-    }
-
-    function sortData(data) {
-        const sorted = [...data];
-        if (sortOption === "default") return sorted;
-        
-        switch (sortOption) {
-            case "index-desc":
-                sorted.reverse();
-                break;
-            case "title-asc":
-                sorted.sort((a, b) => a.title.localeCompare(b.title));
-                break;
-            case "title-desc":
-                sorted.sort((a, b) => b.title.localeCompare(a.title));
-                break;
-            case "duration-asc":
-                sorted.sort((a, b) => a.durationSeconds - b.durationSeconds);
-                break;
-            case "duration-desc":
-                sorted.sort((a, b) => b.durationSeconds - a.durationSeconds);
-                break;
-        }
-        return sorted;
     }
 
     function updateDropdowns(startSelect, endSelect, data) {
@@ -148,11 +122,10 @@
         startSelect.innerHTML = "";
         endSelect.innerHTML = "";
 
-        data.forEach((video, i) => {
-            const val = i + 1;
-            const text = `${val}. ${video.title}`;
-            startSelect.add(new Option(text, val));
-            endSelect.add(new Option(text, val));
+        data.forEach((video) => {
+            const text = `${video.index}. ${video.title}`;
+            startSelect.add(new Option(text, video.index));
+            endSelect.add(new Option(text, video.index));
         });
 
         startSelect.value = prevStart <= data.length ? prevStart : 1;
@@ -162,26 +135,13 @@
         endIndex = parseInt(endSelect.value) || data.length;
     }
 
-    function applyUIVisibility(allData, filteredSortedData) {
-        const container = document.querySelector(VIDEO_LIST_SELECTOR);
-        if (container) {
-            container.style.display = "flex";
-            container.style.flexDirection = "column";
-        }
-
+    function applyUIVisibility(allData, filteredData) {
         allData.forEach((v) => {
-            const sortIdx = filteredSortedData.findIndex((s) => s.element === v.element);
-            
-            if (sortIdx !== -1) {
-                v.element.style.order = sortIdx;
-                v.element.style.display = "";
+            if (isFocusMode) {
+                const isSelected = filteredData.some(f => f.element === v.element);
+                v.element.style.display = isSelected ? "" : "none";
             } else {
-                if (isFocusMode) {
-                    v.element.style.display = "none";
-                } else {
-                    v.element.style.order = 9999; // Move non-selected to bottom
-                    v.element.style.display = "";
-                }
+                v.element.style.display = "";
             }
         });
     }
@@ -189,31 +149,29 @@
     function updatePanel() {
         if (!panel) return;
 
-        const rawData = extractVideoData();
+        videoData = extractVideoData();
         
-        // Always populate dropdowns with original order
         const startSelect = panel.querySelector("#range-start");
         const endSelect = panel.querySelector("#range-end");
-        if (rawData.length > 0) {
-            updateDropdowns(startSelect, endSelect, rawData);
+        if (videoData.length > 0) {
+            updateDropdowns(startSelect, endSelect, videoData);
         }
 
-        // Filter based on original indices
         const startIdx = Math.max(0, startIndex - 1);
-        const endIdx = Math.min(rawData.length, endIndex || rawData.length);
-        const rangeData = rawData.slice(startIdx, endIdx);
+        const endIdx = Math.min(videoData.length, endIndex || videoData.length);
+        
+        const actualStart = Math.min(startIdx, endIdx);
+        const actualEnd = Math.max(startIdx, endIdx);
+        
+        const filtered = videoData.slice(actualStart, actualEnd);
 
-        // Sort the filtered result
-        const sortedFiltered = sortData(rangeData);
-
-        const totalSeconds = sortedFiltered.reduce((sum, v) => sum + v.durationSeconds, 0);
-
+        const totalSeconds = filtered.reduce((sum, v) => sum + v.durationSeconds, 0);
         const countEl = panel.querySelector(".stat-count");
         const durationEl = panel.querySelector(".stat-duration");
-        if (countEl) countEl.textContent = `Videos Selected: ${sortedFiltered.length}`;
+        if (countEl) countEl.textContent = `Videos Selected: ${filtered.length}`;
         if (durationEl) durationEl.textContent = `Total Duration: ${formatDuration(totalSeconds)}`;
 
-        applyUIVisibility(rawData, sortedFiltered);
+        applyUIVisibility(videoData, filtered);
     }
 
     function createPanel(target) {
@@ -222,19 +180,6 @@
         panel = document.createElement("div");
         panel.id = PANEL_ID;
         panel.innerHTML = `
-            <div class="controls">
-                <div class="control-group">
-                    <label>Sort by:</label>
-                    <select id="sort-select">
-                        <option value="default">Index (Ascending)</option>
-                        <option value="index-desc">Index (Descending)</option>
-                        <option value="title-asc">Title (A-Z)</option>
-                        <option value="title-desc">Title (Z-A)</option>
-                        <option value="duration-asc">Duration (Shortest first)</option>
-                        <option value="duration-desc">Duration (Longest first)</option>
-                    </select>
-                </div>
-            </div>
             <div class="stats-container">
                 <div class="stat-count">0 Videos Selected</div>
                 <div class="stat-duration">Duration: 0:00</div>
@@ -260,15 +205,9 @@
         target.after(panel);
         lastVideoCount = 0;
 
-        const sortSelect = panel.querySelector("#sort-select");
         const startSelect = panel.querySelector("#range-start");
         const endSelect = panel.querySelector("#range-end");
         const focusToggle = panel.querySelector("#focus-toggle");
-
-        sortSelect.addEventListener("change", (e) => {
-            sortOption = e.target.value;
-            updatePanel();
-        });
 
         const handleChange = () => {
             startIndex = parseInt(startSelect.value) || 1;
